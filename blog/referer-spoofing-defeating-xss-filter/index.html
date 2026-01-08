@@ -1,0 +1,111 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="alternate icon" type="image/x-icon" href="/favicon.ico"><meta name="generator" content="Astro v5.16.6"><title>Referer spoofing and defeating the XSS filter (Edge/IE)</title><meta name="description" content><link rel="canonical" href="https://www.brokenbrowser.com/blog/referer-spoofing-defeating-xss-filter/"><meta property="og:title" content="Referer spoofing and defeating the XSS filter (Edge/IE)"><meta property="og:description" content><meta property="og:type" content="website"><meta property="og:url" content="https://www.brokenbrowser.com/blog/referer-spoofing-defeating-xss-filter/"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Referer spoofing and defeating the XSS filter (Edge/IE)"><meta name="twitter:description" content><link rel="sitemap" href="/sitemap-index.xml"><link rel="alternate" type="application/rss+xml" title="RSS" href="/rss.xml"><link rel="stylesheet" href="/_astro/_slug_.D8CnJWvD.css"></head> <body> <div class="container center"> <header class="header"> <div class="header__inner"> <div class="header__logo"> <a href="/"> <div class="logo">
+MagicMac Labs
+</div> </a> </div> <ul class="menu menu--mobile"> <li class="menu__trigger">Menu ▾</li> <li> <ul class="menu__dropdown"> <!--<li><a href={`${base}`}>Home</a></li>--> <li><a href="/browser-workshop/">Browser Workshop</a></li> <li><a href="/musings/">Musings</a></li> <li><a href="/about/">About</a></li> </ul> </li> </ul> </div> <nav class="navigation-menu"> <ul class="navigation-menu__inner menu--desktop"> <!--<li><a href={`${base}`}>Home</a></li>--> <li><a href="/browser-workshop/">Browser Workshop</a></li> <li><a href="/musings/">Musings</a></li> <li><a href="/about/">About</a></li> </ul> </nav> </header> <main class="content">  <article> <h1 class="post-title">Referer spoofing and defeating the XSS filter (Edge/IE)</h1> <div class="post-meta"> <time> <time datetime="2016-09-12T00:00:00.000Z"> 2016-09-12 </time> </time> <span class="post-category"> :: browser-workshop</span>  </div>  <div class="post-content">  <p><a href="https://en.wikipedia.org/wiki/Referer_spoofing">According to Wikipedia</a>, “<em>Referer spoofing is the sending of incorrect referer information in an HTTP request in order to prevent a website from obtaining accurate data on the identity of the web page previously visited by the user.</em>”</p>
+<p>In other words, making a server think that requests are coming from anywhere we want.</p>
+<p>The original PoC sent to MSRC was using iframes, but their rejection made me come back to find something easier. Either way, the referer-spoof works essentially as in the original proof of concept.</p>
+<blockquote>
+<ul>
+<li>Date: Jul 14, 8:47AM (GMT-3)</li>
+<li>From: Manuel Caballero</li>
+<li>To: <a href="mailto:secure@microsoft.com">secure@microsoft.com</a></li>
+<li>Attachments: IE_EDGE_xss_filter_bypass.zip</li>
+</ul>
+<p>Hey fellas! Attached you have a working PoC with an XSS-Filter bypass […]</p>
+<ol>
+<li>Inject an iFrame on the vulnerable URL.</li>
+<li>Load the vulnerable inside the iFrame but this time, with the script you want to execute.</li>
+</ol>
+<p>Now, this happens because IE/Edge disable the filter <strong>when the requests come from the same-domain referrer</strong> […]</p>
+<p>It’s easy to load inside the iFrame the vulnerable URL because IE/Edge has <strong>many problems regarding referrers</strong>.</p>
+<p>It’s quite easy (check the PoC) to <strong>emulate essentially, any referrer we want</strong>. […]</p>
+</blockquote>
+<blockquote>
+<ul>
+<li>Date: Jul 14, 5:29PM (GMT-3)</li>
+<li>From: <a href="mailto:secure@microsoft.com">secure@microsoft.com</a></li>
+<li>To: Manuel Caballero</li>
+</ul>
+<p>Hello, Thank you for contacting the Microsoft Security Response Center (MSRC)[…] but filter bypasses themselves are not considered to be vulnerabilities.</p>
+<p>Regards,
+[…]</p>
+<p>MSRC</p>
+</blockquote>
+<h2 id="referer">Referer</h2>
+<p>The referer is an HTTP header that allows a site to identify where the request is coming from. For example, if we search for “MS Edge” in Google and click on the first organic link, the browser will navigate to microsoft.com sending google.com as the referer. Microsoft will know that we are coming from Google because the referer is sent by the browser when doing the request.</p>
+<p><img src="/images/2016/09/referer.png" alt="Referer Click"></p>
+<p>The referer is not only sent when clicking on a link but also on every resource that is requested. If we load a webpage (say, magicmac.com) that renders two images and an iframe, all those requests will carry the referer in the http header. The requests will look like this:</p>
+<ol>
+<li>Main page (magicmac.com) with an empty referer. The browser leaves it blank when we directly type the URL into the address bar.</li>
+<li>Two images. Both with magicmac.com as the referer.</li>
+<li>One iframe also with magicmac.com as the referer.</li>
+</ol>
+<p>Let’s watch that closely while capturing traffic using <a href="http://www.telerik.com/fiddler">Fiddler Web Debugger</a>. A simple html with two images side by side and an iframe below them.</p>
+<p><img src="/images/2016/09/requests_3.png" alt="Requests"></p>
+<p>Now check out the Fiddler log below with the request numbers matching the ones of the images/iframe above. In the first row we have the request number, then Host/URLs and in the last one, referers. To make this clearer I deleted a few lines (requests 1, 6 and 7) from the Fiddler log,  as those were unrelated to our task.</p>
+<p>Look below how request #2 has an empty referer because its the URL that we typed in the address bar, with no referer at all.  Then come requests #3 and #4 where both have magicmac.com as the referer. Finally request #5 also with magicmac.com</p>
+<p><img src="/images/2016/09/Fiddler_Ref.png" alt="Fiddler Referer"></p>
+<p>But what happens after that? Why is that all requests starting from #8 have bing.com as the referer? It’s because those images/scripts are being requested by bing.com and not magicmac, even if the top URL <strong>is</strong> magicmac. Keep in mind that the referer is always the Host/URL that generates the request. Bing.com is inside an iframe and all requests that is doing are coming from bing.com, not magicmac. Who is requesting those scripts and images? Bing.com</p>
+<p>If this explanation is unclear I suggest you read <a href="https://en.wikipedia.org/wiki/HTTP_referer">this Wikipedia article</a> which is better written and more detailed.</p>
+<h2 id="basic-uses-of-the-http-referer-on-the-web">Basic uses of the http referer on the web</h2>
+<ul>
+<li>
+<p>A server wants to prevent other sites requesting images from itself. This is called <a href="https://en.wikipedia.org/wiki/Hotlink">Hotlinking</a>.</p>
+</li>
+<li>
+<p>A website wants to serve premium content <strong>only</strong> to a specific HTTP referer. This happens a lot with videos/tutorials served from Vimeo. They are accessible only when the browser referer comes from a particular host. In other words, if you know the “secret” host and <a href="https://chrome.google.com/webstore/detail/referer-control/hnkcfpcejkafcihlgbojoidoihckciin">how to change your referer</a>, you can get all that content for free.</p>
+</li>
+<li>
+<p>Browsers disable the XSS Filter leaving the site naked against <a href="https://en.wikipedia.org/wiki/Cross-site_scripting">XSS</a> or <a href="https://en.wikipedia.org/wiki/Cross-site_request_forgery">CSRF</a> attacks. What? Oh yes. IE/Edge allow a site to “auto-xss” itself. In other words, those browsers will literally disable the XSS filter if the referer of the request comes from the same domain. No worries if unclear, we will see this in a bit.</p>
+</li>
+</ul>
+<h2 id="creating-vulnerable-samples">Creating vulnerable samples</h2>
+<p>Let’s create a couple of php scripts: one with a referer check to serve “premium content” and another vulnerable to XSS attacks.</p>
+<p>The script below is serves premium content only to requests coming from <code>www.nature.com</code>, otherwise it says you are not authorized.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="php"><code><span class="line"><span style="color:var(--astro-code-token-comment)">// http://www.cracking.com.ar/demos/referer/refcheck.php</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">$ref </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-foreground)"> $_SERVER[</span><span style="color:var(--astro-code-token-string-expression)">'HTTP_REFERER'</span><span style="color:var(--astro-code-foreground)">];</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">$refData </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-function)"> parse_url</span><span style="color:var(--astro-code-token-punctuation)">(</span><span style="color:var(--astro-code-token-function)">$ref</span><span style="color:var(--astro-code-token-punctuation)">)</span><span style="color:var(--astro-code-foreground)">;</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">$host </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-foreground)"> $refData[</span><span style="color:var(--astro-code-token-string-expression)">'host'</span><span style="color:var(--astro-code-foreground)">];</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">if</span><span style="color:var(--astro-code-foreground)">($host </span><span style="color:var(--astro-code-token-keyword)">==</span><span style="color:var(--astro-code-token-string-expression)"> 'www.nature.com'</span><span style="color:var(--astro-code-foreground)">)</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">{</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">  echo</span><span style="color:var(--astro-code-token-string-expression)"> "This is your premium content because you are coming from: "</span><span style="color:var(--astro-code-token-keyword)"> .</span><span style="color:var(--astro-code-foreground)"> $host;</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">}</span></span>
+<span class="line"><span style="color:var(--astro-code-token-keyword)">else</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">{</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">  echo</span><span style="color:var(--astro-code-token-string-expression)"> "You are not authorized to view this page"</span><span style="color:var(--astro-code-foreground)">;</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">}</span></span></code></pre>
+<p>The page returned a “not authorized” message because the referer is brokenbrowser, not nature. But no worries, we will bypass this soon. Let’s see now a site that is vulnerable to XSS attacks.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="php"><code><span class="line"><span style="color:var(--astro-code-token-comment)">// http://www.cracking.com.ar/demos/referer/xss.php</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">echo</span><span style="color:var(--astro-code-foreground)"> $_REQUEST[</span><span style="color:var(--astro-code-token-string-expression)">'xss'</span><span style="color:var(--astro-code-foreground)">];</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)">// XSS me like this:</span></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)">// http://www.cracking.com.ar/demos/referer/xss.php?xss=&#x3C;script>alert(1)&#x3C;/script></span></span>
+<span class="line"></span></code></pre>
+<p><img src="/images/2016/09/xss-block.png" alt="IE XSS Filter in Action"></p>
+<p>IE XSS Filter in Action</p>
+<p>The code injection failed thanks to the XSS filter. No hurries, we will bypass this in a second.</p>
+<h2 id="referer-spoof---how-to-do-it">Referer spoof - How to do it</h2>
+<p>The problem that both Edge and IE have is quite simple: when changing the location of the top window using JavaScript, the referer will be the previous URL instead of the host that change it. Check below, easier reading the code than my English explanation:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="javascript"><code><span class="line"><span style="color:var(--astro-code-foreground)">win </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-constant)"> window</span><span style="color:var(--astro-code-token-function)">.open</span><span style="color:var(--astro-code-foreground)">(</span><span style="color:var(--astro-code-token-string-expression)">"http://www.nature.com"</span><span style="color:var(--astro-code-foreground)">);</span></span>
+<span class="line"><span style="color:var(--astro-code-token-constant)">win</span><span style="color:var(--astro-code-foreground)">.</span><span style="color:var(--astro-code-token-constant)">location</span><span style="color:var(--astro-code-foreground)">.href </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)"> "http://www.cracking.com.ar/demos/referer/refcheck.php"</span><span style="color:var(--astro-code-foreground)">;</span></span></code></pre>
+<p>Fooled! Microsoft Edge (and IE) mistakenly passed nature.com as the referer when it was just the previous page. Remember: the referer <em>should be</em> the URL that initiated the request, <strong>not</strong> the previous page. In the example above, we opened a window on nature and immediately changed -via scripting- its location. The referer <strong>should have been</strong> the URL of the script that changed its location which in this case is also cracking.com.ar. Want to try it again? Let’s make whatsmyreferer.com think that we are coming from Paypal.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="javascript"><code><span class="line"><span style="color:var(--astro-code-foreground)">win </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-constant)"> window</span><span style="color:var(--astro-code-token-function)">.open</span><span style="color:var(--astro-code-foreground)">(</span><span style="color:var(--astro-code-token-string-expression)">"https://www.paypal.com"</span><span style="color:var(--astro-code-foreground)">);</span></span>
+<span class="line"><span style="color:var(--astro-code-token-constant)">win</span><span style="color:var(--astro-code-foreground)">.</span><span style="color:var(--astro-code-token-constant)">location</span><span style="color:var(--astro-code-foreground)">.href </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)"> "https://www.whatismyreferer.com"</span><span style="color:var(--astro-code-foreground)">;</span></span></code></pre>
+<p><img src="/images/2016/09/fooled.png" alt="Referer Spofed"></p>
+<h2 id="xss-filter-bypass---how-to-do-it">XSS Filter Bypass - How to do it</h2>
+<p>Bug hunter, I’m pretty confident of your awareness on the mechanics of the XSS filter of IE/Edge, but just in case, remember that it is literally disabled on pages where the referer host equals the host of the rendered page. So this will be pretty simple: we open any URL that belongs to the host of the vulnearable page, and then we change the location XSSing it straight! If we want to attack ebay.com then we will emulate-spoof ebay.com as the referer and then, XSS it. Let’s give it a try. Remember the vulnerable page above?</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="php"><code><span class="line"><span style="color:var(--astro-code-token-comment)">// http://www.cracking.com.ar/demos/referer/xss.php</span></span>
+<span class="line"><span style="color:var(--astro-code-token-function)">echo</span><span style="color:var(--astro-code-foreground)"> $_REQUEST[</span><span style="color:var(--astro-code-token-string-expression)">'xss'</span><span style="color:var(--astro-code-foreground)">];</span></span>
+<span class="line"></span></code></pre>
+<p>We tried to inject a script there but failed because the XSS filter blocked it. But let’s fool the referer and make this work!</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="javascript"><code><span class="line"><span style="color:var(--astro-code-foreground)">win </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-constant)"> window</span><span style="color:var(--astro-code-token-function)">.open</span><span style="color:var(--astro-code-foreground)">(</span><span style="color:var(--astro-code-token-string-expression)">"http://www.cracking.com.ar"</span><span style="color:var(--astro-code-foreground)">);  </span><span style="color:var(--astro-code-token-comment)">// Referer Spoofer</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-token-comment)">// Successful code injection</span></span>
+<span class="line"><span style="color:var(--astro-code-token-constant)">win</span><span style="color:var(--astro-code-foreground)">.</span><span style="color:var(--astro-code-token-constant)">location</span><span style="color:var(--astro-code-foreground)">.href </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)"> "http://www.cracking.com.ar/demos/referer/xss.php?xss=&#x3C;script>alert(1)&#x3C;/script>"</span><span style="color:var(--astro-code-foreground)">;</span></span></code></pre>
+<p>Fellow bug hunter, I hope you will continue playing with this. The <em>history</em> and <em>location</em> objects have other bugs waiting to be found. Play with them and the vulnerabilities will come to you!</p>
+<p>Have fun and <a href="https://twitter.com/magicmac2000">ping me</a> if you have questions!</p> <div class="pagination"> <div class="pagination__title"> <span class="pagination__title-h">Read other posts</span> <hr> </div> <div class="pagination__buttons">  <a href="/blog/css-history-leak/" class="button inline prev">
+&lt; [CSS History Leak or &quot;I know where you&#39;ve been&quot; (Edge)]
+</a> <span>::</span> <a href="/blog/detecting-apps-mimetype-malware/" class="button inline next">
+[Detecting analysts before installing the malware (IE)] &gt;
+</a> </div> </div>  </div> </article> <script type="module">document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll("pre.astro-code").forEach(t=>{const n=document.createElement("div");n.className="highlight",t.parentNode?.insertBefore(n,t),n.appendChild(t);const a=t.getAttribute("data-language")||"text",o=document.createElement("div");if(o.className="code-title",o.textContent=a,navigator.clipboard){const e=document.createElement("button");e.className="copy-button",e.textContent="Copy",e.addEventListener("click",async()=>{const c=t.textContent||"";try{await navigator.clipboard.writeText(c),e.textContent="Copied",setTimeout(()=>{e.textContent="Copy"},1e3)}catch(r){console.error("Failed to copy:",r)}}),o.appendChild(e)}n.insertBefore(o,t)})});</script>  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>  </main> <footer class="footer"> <div class="footer__inner"> <div class="copyright"> <span>© 2026 MagicMac Labs</span> </div> </div> </footer> </div> <script type="module">(()=>{const s=document.querySelector(".container"),o=document.querySelectorAll(".menu");document.body.addEventListener("click",()=>{o.forEach(e=>{e.classList.contains("open")&&e.classList.remove("open")})}),window.addEventListener("resize",()=>{o.forEach(e=>{e.classList.remove("open")})}),o.forEach(e=>{const i=e.querySelector(".menu__trigger"),t=e.querySelector(".menu__dropdown");i&&t&&(i.addEventListener("click",n=>{n.stopPropagation(),e.classList.contains("open")?e.classList.remove("open"):(o.forEach(c=>c.classList.remove("open")),e.classList.add("open")),s&&t.getBoundingClientRect().right>s.getBoundingClientRect().right&&(t.style.left="auto",t.style.right="0")}),t.addEventListener("click",n=>n.stopPropagation()))})})();</script> </body> </html> 

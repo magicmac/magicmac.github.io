@@ -1,0 +1,153 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="alternate icon" type="image/x-icon" href="/favicon.ico"><meta name="generator" content="Astro v5.16.6"><title>Abusing of Protocols to Load Local Files, bypass the HTML5 Sandbox and Open Popups (Edge)</title><meta name="description" content><link rel="canonical" href="https://www.brokenbrowser.com/blog/abusing-of-protocols/"><meta property="og:title" content="Abusing of Protocols to Load Local Files, bypass the HTML5 Sandbox and Open Popups (Edge)"><meta property="og:description" content><meta property="og:type" content="website"><meta property="og:url" content="https://www.brokenbrowser.com/blog/abusing-of-protocols/"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Abusing of Protocols to Load Local Files, bypass the HTML5 Sandbox and Open Popups (Edge)"><meta name="twitter:description" content><link rel="sitemap" href="/sitemap-index.xml"><link rel="alternate" type="application/rss+xml" title="RSS" href="/rss.xml"><link rel="stylesheet" href="/_astro/_slug_.D8CnJWvD.css"></head> <body> <div class="container center"> <header class="header"> <div class="header__inner"> <div class="header__logo"> <a href="/"> <div class="logo">
+MagicMac Labs
+</div> </a> </div> <ul class="menu menu--mobile"> <li class="menu__trigger">Menu ▾</li> <li> <ul class="menu__dropdown"> <!--<li><a href={`${base}`}>Home</a></li>--> <li><a href="/browser-workshop/">Browser Workshop</a></li> <li><a href="/musings/">Musings</a></li> <li><a href="/about/">About</a></li> </ul> </li> </ul> </div> <nav class="navigation-menu"> <ul class="navigation-menu__inner menu--desktop"> <!--<li><a href={`${base}`}>Home</a></li>--> <li><a href="/browser-workshop/">Browser Workshop</a></li> <li><a href="/musings/">Musings</a></li> <li><a href="/about/">About</a></li> </ul> </nav> </header> <main class="content">  <article> <h1 class="post-title">Abusing of Protocols to Load Local Files, bypass the HTML5 Sandbox and Open Popups (Edge)</h1> <div class="post-meta"> <time> <time datetime="2016-11-25T00:00:00.000Z"> 2016-11-25 </time> </time> <span class="post-category"> :: browser-workshop</span>  </div>  <div class="post-content">  <p>On October 25th, the fellows <a href="https://twitter.com/MSEdgeDev">@MSEdgeDev</a> twitted a <a href="https://twitter.com/MSEdgeDev/status/790980669820145665">link that called my attention</a> because when I clicked on it (being on Chrome) the Windows Store App opened. It might not surprise you, but it surprised me!</p>
+<p>As far as I remembered, Chrome had this healthy habit of asking the user before opening external programs but in this case it opened directly, without warnings.</p>
+<p>This was different and caught my attention because I never accepted to open the Windows Store in Chrome. There are some extensions and protocols that will open automatically but I’ve never approved the Windows Store.</p>
+<p><img src="/images/2016/11/01-windows-store.png" alt="Windows Store"></p>
+<p>The shortened Twitter link redirected to <a href="https://aka.ms/extensions-storecollection">https://aka.ms/extensions-storecollection</a> which (again) redirected to the interesting: <a href="ms-windows-store://collection/?CollectionId=edgeExtensions"><strong>ms-windows-store:</strong>//collection/?CollectionId=edgeExtensions</a>.</p>
+<p>It was a protocol that I was not aware of, so I immediately tried to find it in the place where most protocol associations reside: the registry. A search of “<strong>ms-windows-store</strong>”* *immediately returned our string inside the PackageId of the what seemed to be the Windows Store app.</p>
+<p><img src="/images/2016/11/02-regedit.png" alt="RegEdit"></p>
+<p>Noting that we were also in a key called “Windows.Protocol” I scrolled up and down a bit to see if there were other apps inside, and found that tons of them (including MS Edge) had their own protocols registered. This is nice because it opens a new attack surface straight from the browser. But let’s press F3 to see if we find other matches.</p>
+<p><img src="/images/2016/11/03-query-dvd.png" alt="Query DVD"></p>
+<p>It seems that the ms-windows-store: protocol is also accepting search arguments, so we can try opening our custom search straight from Google Chrome. In fact, the Windows Store app seems to be rendering HTML with the Edge engine, which is also interesting because we might try to XSS it or if the app is native, send big chunks of data and see what happens.</p>
+<p><img src="/images/2016/11/03-query-broken-browser.png" alt="Query Broken Browser"></p>
+<p>But we won’t be doing that now, let’s go back to regedit and press F3 to see what else we can find.</p>
+<p><img src="/images/2016/11/04-url-string.png" alt="URL String"></p>
+<p>This one is interesting also, because it gives us clues on how to <em>quickly</em> find more protocols if they are prepended with the string “URL:”. Let’s reset our search to “URL:” and see what we get. Pressing the [Home] key takes us back to the top of the registry and a search of “URL:” immediately returns the first match “URL:<strong>about:blank</strong>”, confirming that we are not crazy.</p>
+<p>Press F3 again and we find the <strong>bingnews:</strong> protocol but this time Chrome requests us confirmation to open it. No problem, let’s try it on Edge to see what happens. It opens! Next match in the registry is the <strong>calculator:</strong> protocol. Will this work?</p>
+<p><img src="/images/2016/11/05-calculator.png" alt="Calculator"></p>
+<p>Wow! I’m sure this will piss off exploit writers. What program will they pop now? Both <a href="calculator:">calc</a> and <a href="https://drive.google.com/file/d/10H-AVObN5PhyC4uchCrIJn67DRkrS3WC">notepad</a> can be open without memory corruptions, and cmd.exe is deprecated in favor to powershell now. Microsoft removed the fun :P out of you guys.</p>
+<p>This could be a good moment to enumerate all loadable protocols and see which apps accept arguments so we can try to inject code into them (binary or pure javascript, depending on how the app was coded and how it treats the arguments). There is a lot of interesting stuff here to play with, and if we keep searching for protocols we will find tons of apps that open (including Candy Crush which I didn’t know it was on my PC).</p>
+<p>By pressing F3 a few times I learned a lot. For example, there’s a <code>microsoft-edge:</code> protocol that loads URLs in a new tab. It doesn’t seem to be important, until we remember the limits that HTML pages should have. Will the popUp blocker prevent us from opening 20 <code>microsoft-edge:http://www.google.com</code> tabs?</p>
+<p><img src="/images/2016/11/06-popups.png" alt="No PopUp Blocker"></p>
+<p><strong>Silently Patched on 2017-04-11 - Windows Creators Update</strong>. Alternative version here: <a href="https://drive.google.com/file/d/0BympnAilEUgUSVFsWnQ2NlFNd0U">bypass the popup blocker on Microsoft Edge</a>.</p>
+<p>What about the <a href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLIFrameElement/sandbox">HTML5 Sandbox</a>? If you are not familiar with it, it’s just a way to impose restrictions to a webpage using the <strong>sandbox</strong> iframe attribute or the sandbox http header. For example, if we want to render content inside an iframe and make sure it does not run javascript (not even open new tabs) we can just use this tag:</p>
+<p><code>&#x3C;iframe src="sandboxed.html" sandbox>&#x3C;/iframe></code></p>
+<p>And the rendered page will be completely restricted. Essentially it can only render HTML/CSS but no javascript or access to things like cookies. In fact, if we use the sandbox granularity and allow at least new windows/tabs, all of them should inherit the sandboxed attributes and opened links from that iframe will still be sanboxed. However, using the microsoft-edge protocol bypasses this completely.</p>
+<p><img src="/images/2016/11/06-sandbox-escape.png" alt="HTML5 Sandbox Escape"></p>
+<p>[ Silently Patched on 2017-04-11 - Windows Creators Update ]</p>
+<p>Nice to see that the <strong>microsoft-edge</strong> protocol allows us to bypass different restrictions. I haven’t went further than that but you can try! This is a journey of discovery, remember that a single tweet fired my motivation to play a bit and ended up giving us stuff that truly deserves more research.</p>
+<p>I continued pressing F3 in regedit and found the <strong>read:</strong> protocol which called my attention because when reading its (javascript) source code it had the potential for a UXSS, but Edge kept crashing again and again while trying. It crashed too much. For example setting the location of an iframe to “read:” was enough to crash the browser including all tabs. Want to see it?</p>
+<p>[ Silently Patched on 2017-04-11 - Windows Creators Update ]</p>
+<p>OK, I was curious about what was happening  so I appended a few bytes to the read protocol and fired up WinDbg to see if the crash was related to invalid data. Something quick and simple, no fuzzing or anything special: <code>read:xncbmx,qwieiwqeiu;asjdiw!@#$%^&#x26;*</code></p>
+<p>Oh yes, I really typed something like that. The only way that I found not to crash the read protocol was to load anything coming from http[s]. Everything else crashed the browser.</p>
+<p>So let’s attach WinDbg to Edge. A quick dirty method that I use it to simply kill the Edge process and children, reopen it and attach to the latest process that uses EdgeHtml.dll. Of course there are easier ways but … yeah, I’m just like that. Open a command line and…</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>taskkill /f /t /im MicrosoftEdge.exe</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>** Open Edge and load the webpage but make sure it doesn't crash yet **</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>tasklist /m EdgeHtml.dll</span></span>
+<span class="line"><span></span></span></code></pre>
+<p>Enough. Now load WinDbg and attach to the latest listed Edge process that uses EdgeHtml. And remember to <a href="https://msdn.microsoft.com/en-us/library/windows/hardware/hh439335(v=vs.85).aspx">use Symbols in WinDbg.</a></p>
+<p><img src="/images/2016/11/07-attach-to-edge.png" alt="Attach to Edge"></p>
+<p>Once attached, just press F5 or g [ENTER] inside WinDbg so Edge keeps running. This is how my screen looks right now. On the left I have the page that I use to test **everything **and on the right, WinDbg attached to that particular Edge process.</p>
+<p><img src="/images/2016/11/08-my-configuration.png" alt="Edge WinDbg Config"></p>
+<p>We will use a window.open to play with the read: protocol instead of an iframe because it’s more comfortable. Think about it, there are protocols/urls that might end up changing the top location regardless of how framed they are.</p>
+<p>If we start playing with a protocol inside an iframe there are chances that our own page (the top) will be unloaded, losing the code that we’ve just typed. My particular test-page saves what I type, and if the browser crashes it’s highly likely that it will be recovered. But even with everything saved, when I’m playing with code that could change the URL of my test-page, I open it in a new window. Just a habit.</p>
+<p>On the left screen we can type and execute JavaScript code quickly, on the right we have WinDbg prepared to reveal us what’s happening behind this crash. Go ahead, let’s run the JavaScript code and… Bang! WinDbg breaks.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>ModLoad: ce960000 ce996000 C:\Windows\SYSTEM32\XmlLite.dll</span></span>
+<span class="line"><span>ModLoad: c4110000 c4161000 C:\Windows\System32\OneCoreCommonProxyStub.dll</span></span>
+<span class="line"><span>ModLoad: d6a20000 d6ab8000 C:\Windows\SYSTEM32\sxs.dll</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>(2c90.33f0): Security check failure or stack buffer overrun - code c0000409 (!!! second chance !!!)</span></span>
+<span class="line"><span>EdgeContent!wil::details::ReportFailure+0x120:</span></span>
+<span class="line"><span>84347de0 cd29 int 29h</span></span></code></pre>
+<p>OK, it seems that Edge knew something went wrong because it’s in a function called “ReportFailure”, right? Come on, I know we can immediately assume that if Edge is here, it failed somewhat “gracefully”. So let’s inspect the stack trace to see where are we coming from. Type “k” in WinDbg.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0:030> k</span></span>
+<span class="line"><span># Child-SP RetAddr Call Site</span></span>
+<span class="line"><span>00 af248b30 88087f80 EdgeContent!wil::details::ReportFailure+0x120</span></span>
+<span class="line"><span>01 af24a070 880659a5 EdgeContent!wil::details::ReportFailure_Hr+0x44</span></span>
+<span class="line"><span>02 af24a0d0 8810695c EdgeContent!wil::details::in1diag3::FailFast_Hr+0x29</span></span>
+<span class="line"><span>03 af24a120 88101bcb EdgeContent!CReadingModeViewerEdge::_LoadRMHTML+0x7c</span></span>
+<span class="line"><span>04 af24a170 880da669 EdgeContent!CReadingModeViewer::Load+0x6b</span></span>
+<span class="line"><span>05 af24a1b0 880da5ab EdgeContent!CBrowserTab::_ReadingModeViewerLoadViaPersistMoniker+0x85</span></span>
+<span class="line"><span>06 af24a200 880da882 EdgeContent!CBrowserTab::_ReadingModeViewerLoad+0x3f</span></span>
+<span class="line"><span>07 af24a240 880da278 EdgeContent!CBrowserTab::_ShowReadingModeViewer+0xb2</span></span>
+<span class="line"><span>08 af24a280 88079a9e EdgeContent!CBrowserTab::_EnterReadingMode+0x224</span></span>
+<span class="line"><span>09 af24a320 d9e4b1d9 EdgeContent!BrowserTelemetry::Instance::2::dynamic</span></span>
+<span class="line"><span>0a af24a3c0 8810053e shlwapi!IUnknown_Exec+0x79</span></span>
+<span class="line"><span>0b af24a440 880fee33 EdgeContent!CReadingModeController::_NavigateToUrl+0x52</span></span>
+<span class="line"><span>0c af24a4a0 88074f98 EdgeContent!CReadingModeController::Open+0x1d3</span></span>
+<span class="line"><span>0d af24a500 b07df508 EdgeContent!BrowserTelemetry::Instance'::2::dynamic</span></span>
+<span class="line"><span>0e af24a5d0 b0768c47 edgehtml!FireEvent_BeforeNavigate+0x118</span></span></code></pre>
+<p>Check out the first two lines, both called blah blah <strong>ReportFailure</strong>, don’t you think Edge is here because something went wrong? Of course! Let’s keep going down until we find a function name that makes sense. The next one is called blah <strong>FailFast</strong> which also smells like it’s a function Edge called knowing that something went wrong. But we want to find the code that made Edge unhappy so continue reading down.</p>
+<p>The next one is blah <strong>_LoadRMHTML</strong>. This looks much better to me, don’t you agree? In fact, its name makes me think it Loads HTML. It would be interesting to break before the crash, so why not setting a breakpoint a few lines above _LoadRMHTML? We inspected the stack-trace, now we will look at the code.</p>
+<p>Let’s first unassemble back from that point (function + offset). It’s easy, using the “ub” command in WinDbg.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0:030> ub EdgeContent!CReadingModeViewerEdge::_LoadRMHTML+0x7c</span></span>
+<span class="line"><span>EdgeContent!CReadingModeViewerEdge::_LoadRMHTML+0x5a:</span></span>
+<span class="line"><span>8810693a call qword ptr [EdgeContent!_imp_SHCreateStreamOnFileEx (882562a8)]</span></span>
+<span class="line"><span>88106940 test eax,eax</span></span>
+<span class="line"><span>88106942 jns EdgeContent!CReadingModeViewerEdge::_LoadRMHTML+0x7d (8810695d)</span></span>
+<span class="line"><span>88106944 mov rcx,qword ptr [rbp+18h]</span></span>
+<span class="line"><span>88106948 lea r8,[EdgeContent!`string (88261320)]</span></span>
+<span class="line"><span>8810694f mov r9d,eax</span></span>
+<span class="line"><span>88106952 mov edx,1Fh</span></span>
+<span class="line"><span>88106957 call EdgeContent!wil::details::in1diag3::FailFast_Hr (8806597c)</span></span></code></pre>
+<p>We will focus on the names only and ignore everything else, OK? Just like when we were <a href="../detecting-apps-mimetype-malware/">trying to find a variation for the mimeType bug</a>, we are going to speculate here and if we fail we would of course keep going deeper. But sometimes a quick look on the debugger can reveal many things.</p>
+<p>We know that Edge will crash if it arrives to the last instruction of this snippet (address 88106957, <strong>FailFast_Hr</strong>). Our intention is to see why we ended up at that location, who the hell is sending us there. The first instruction of the code above seems to be calling a function with a complicated name which apparently reveals us tons of stuff.</p>
+<p>EdgeContent!<strong><em>imp</em></strong><em>SHCreateStreamOnFileEx</em></p>
+<p>The first part before the ! is the module (exe, dll, etc) where this instruction is located. In this case it is EdgeContent and we don’t even care about its extension, it’s just code. After the ! comes a funny name <strong><em>imp</em></strong> and then <strong>SHCreateStreamOnFileEx</strong>* *which seems to be a function name that “creates a stream on file”. Do you agree? In fact, the <em>imp</em> part makes me think that maybe this is an imported function loaded from a different binary. Let’s google that name to see if we find something interesting.</p>
+<p><img src="/images/2016/11/09-shcreatestreamonfileex.png" alt="shcreatestreamonfileex"></p>
+<p>That’s pretty nice. The first result came with the exact name that we searched for. Let’s click on it.</p>
+<p><img src="/images/2016/11/10-syntax.png" alt="Definition of Function"></p>
+<p>OK. The first parameter that this function receives is a “A* pointer to a null-terminated string that specifies the file name*”. Interesting! If this snippet of code is being executed, then, it should be receiving a pointer to a file name as the first argument. But how can we see the first parameter? It’s easy, we are working on Winx64, and the <a href="https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention">calling convention</a> / <a href="https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention?view=msvc-170#parameter-passing">parameter passing</a> says that “First 4 parameters are RCX, RDX, R8, R9” (speaking about integers/pointers). This means that the first parameter (pointer to a file name) will be loaded in the register RCX.</p>
+<p>With this information, we can set a breakpoint before Edge calls that function and see what the RCX has at that precise moment. But let’s restart because it’s a bit late at this point: Edge already crashed. Please, re-do what’s described above (kill Edge, open it, load the page, find the process and attach).</p>
+<p>This time, instead of running (F5) the process, we will set a breakpoint. WinDbg revealed the exact offset when we executed our “ub” command.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0:030> ub EdgeContent!CReadingModeViewerEdge::_LoadRMHTML+0x7c</span></span>
+<span class="line"><span>EdgeContent!CReadingModeViewerEdge::_LoadRMHTML+0x5a:</span></span>
+<span class="line"><span>8810693a ff1568f91400 call qword ptr [EdgeContent!_imp_SHCreateStreamOnFileEx (882562a8)]</span></span>
+<span class="line"><span>88106940 85c0 test eax,eax</span></span></code></pre>
+<p>So the breakpoint should go in EdgeContent!CReadingModeViewerEdge::_LoadRMHTML+0x5a
+We type “bp” and the function name + offset [ENTER]. Then “g” to let Edge run.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0:029> bp EdgeContent!CReadingModeViewerEdge::_LoadRMHTML+0x5a</span></span>
+<span class="line"><span>0:029> g</span></span></code></pre>
+<p>This is exciting. We want to see the file name (or string) that RCX points to right before <strong>SHCreateStreamOnFileEx</strong> executes. Let’s run the code and feel the break. Well, I feel it baby =) breakpoints connect me to my childhood. Let’s run the JavaScript code and bang! WinDbg breaks right there.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Breakpoint 0 hit</span></span>
+<span class="line"><span>EdgeContent!CReadingModeViewerEdge::_LoadRMHTML+0x5a:</span></span>
+<span class="line"><span>8820693a ff1568f91400 call qword ptr [EdgeContent!_imp_SHCreateStreamOnFileEx (883562a8)]</span></span>
+<span class="line"><span></span></span></code></pre>
+<p>That’s great, now we can inspect the content where RCX is pointing. To do this we will use the “d” command (display memory) @ and the register name, just like this:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0:030> d @rcx</span></span>
+<span class="line"><span>02fac908 71 00 77 00 69 00 65 00-69 00 77 00 71 00 65 00 q.w.i.e.i.w.q.e.</span></span>
+<span class="line"><span>02fac918 69 00 75 00 3b 00 61 00-73 00 6a 00 64 00 69 00 i.u.;.a.s.j.d.i.</span></span>
+<span class="line"><span>02fac928 77 00 21 00 40 00 23 00-24 00 25 00 5e 00 26 00 w.!.@.#.$.%.^.&#x26;.</span></span>
+<span class="line"><span>02fac938 2a 00 00 00 00 00 08 00-60 9e f8 02 db 01 00 00 *.......`.......</span></span>
+<span class="line"><span>02fac948 10 a9 70 02 db 01 00 00-01 00 00 00 00 00 00 00 ..p.............</span></span>
+<span class="line"><span>02fac958 05 00 00 00 00 00 00 00-00 00 00 00 19 6c 01 00 .............l..</span></span>
+<span class="line"><span>02fac968 44 14 00 37 62 de 77 46-9d 68 27 f3 e0 92 00 00 D..7b.wF.h'.....</span></span>
+<span class="line"><span>02fac978 00 00 00 00 00 00 08 00-00 00 00 00 00 00 00 00 ................</span></span></code></pre>
+<p>This isn’t nice on my eyes but on the right of the first line I see something which looks similar to a unicode string. Let’s display again as unicode (du).</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>0:030> du @rcx</span></span>
+<span class="line"><span>02fac908 "qwieiwqeiu;asjdiw!@#$%^&#x26;*"</span></span></code></pre>
+<p>Nice! The string rings me! Look at the JavaScript code that we’ve just ran.</p>
+<p><img src="/images/2016/11/11-string-after-coma.png" alt="String after coma"></p>
+<p>It seems that the argument passed to this function is whatever we type after the comma. With this knowledge plus knowing that it is expecting a file, we can try a full path to something in my drive. Because Edge runs inside an AppContainer, we will try a file that’s accessible. For example something from the windows/system32 directory.</p>
+<p><code>read:,c:\windows\system32\drivers\etc\hosts**</code></p>
+<p>We are also removing the garbage before the comma which seems unrelated (albeit it deserves more research!). Let’s quickly detach, restart Edge, and run our new code</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="javascript"><code><span class="line"><span style="color:var(--astro-code-foreground)">url </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-string-expression)"> "read:,c:\\windows\\system32\\drivers\\etc\\hosts"</span><span style="color:var(--astro-code-foreground)">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">w </span><span style="color:var(--astro-code-token-keyword)">=</span><span style="color:var(--astro-code-token-constant)"> window</span><span style="color:var(--astro-code-token-function)">.open</span><span style="color:var(--astro-code-foreground)">(url</span><span style="color:var(--astro-code-token-punctuation)">,</span><span style="color:var(--astro-code-token-string-expression)"> ""</span><span style="color:var(--astro-code-token-punctuation)">,</span><span style="color:var(--astro-code-token-string-expression)"> "width=300,height=300"</span><span style="color:var(--astro-code-foreground)">);</span></span>
+<span class="line"></span></code></pre>
+<p>And as expected, the local file loads in the new window without crashes.</p>
+<p><img src="/images/2016/11/12-local-file.png" alt="MS Edge Render Local File"></p>
+<p><a href="https://technet.microsoft.com/library/security/MS17-006">Patched on 2017-03-14</a> - CVE-2017-0154</p>
+<p>Fellow bug hunter, I will stop here but I believe all these things deserve a bit more of research depending on what’s fun for you:</p>
+<p>a. Enumerate all loadable protocols and attack those applications via query-strings.
+b. Play with <strong>microsoft-edge:</strong> which bypasses the HTML5 sandbox, popup blocker and who knows what else.
+c. Keep going with the <strong>read:</strong> protocol. We found a way to stop it from crashing but remember there is a function SHCreateStreamOnFileEx expecting things that we can influence! It’s worth trying more. Also, we can continue working on the arguments to see if commas are used to split arguments, etc. If debugging binaries is boring for you, then you can still try to XSS the reading view.</p>
+<p>I hope you find tons of vulnerabilities! If you have questions, ping me at <a href="https://twitter.com/magicmac2000">@magicmac2000</a>.</p>
+<p>Have a nice day!</p>
+<blockquote>
+<p>From: Manuel Caballero
+Sent: 2016/10/26
+To: <a href="mailto:secure@microsoft.com">secure@microsoft.com</a>
+Subject: MS Edge HTML5 Sandbox Escapes</p>
+<p>Hey fellows! Here’s an Edge Sandbox escape. <a href="http://www.cracking.com.ar/demos/sandboxedge">http://www.cracking.com.ar/demos/sandboxedge</a></p>
+<p>IMO, it’s a bad idea to let all those protocols run straight out of the box because the attack surface of Edge ends up being huge, but hey, it’s your browser! =)</p>
+<p>Cheers!
+Manuel.</p>
+</blockquote> <div class="pagination"> <div class="pagination__title"> <span class="pagination__title-h">Read other posts</span> <hr> </div> <div class="pagination__buttons">  <a href="/blog/loading-insecure-content-in-secure-pages/" class="button inline prev">
+&lt; [Bypassing Mixed Content Warnings - Loading Insecure Content in Secure Pages (Edge/IE)]
+</a> <span>::</span> <a href="/blog/spoof-addressbar-malware/" class="button inline next">
+[Spoofing the address bar and the SmartScreen/Malware Warning (Edge)] &gt;
+</a> </div> </div>  </div> </article> <script type="module">document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll("pre.astro-code").forEach(t=>{const n=document.createElement("div");n.className="highlight",t.parentNode?.insertBefore(n,t),n.appendChild(t);const a=t.getAttribute("data-language")||"text",o=document.createElement("div");if(o.className="code-title",o.textContent=a,navigator.clipboard){const e=document.createElement("button");e.className="copy-button",e.textContent="Copy",e.addEventListener("click",async()=>{const c=t.textContent||"";try{await navigator.clipboard.writeText(c),e.textContent="Copied",setTimeout(()=>{e.textContent="Copy"},1e3)}catch(r){console.error("Failed to copy:",r)}}),o.appendChild(e)}n.insertBefore(o,t)})});</script>  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>  </main> <footer class="footer"> <div class="footer__inner"> <div class="copyright"> <span>© 2026 MagicMac Labs</span> </div> </div> </footer> </div> <script type="module">(()=>{const s=document.querySelector(".container"),o=document.querySelectorAll(".menu");document.body.addEventListener("click",()=>{o.forEach(e=>{e.classList.contains("open")&&e.classList.remove("open")})}),window.addEventListener("resize",()=>{o.forEach(e=>{e.classList.remove("open")})}),o.forEach(e=>{const i=e.querySelector(".menu__trigger"),t=e.querySelector(".menu__dropdown");i&&t&&(i.addEventListener("click",n=>{n.stopPropagation(),e.classList.contains("open")?e.classList.remove("open"):(o.forEach(c=>c.classList.remove("open")),e.classList.add("open")),s&&t.getBoundingClientRect().right>s.getBoundingClientRect().right&&(t.style.left="auto",t.style.right="0")}),t.addEventListener("click",n=>n.stopPropagation()))})})();</script> </body> </html> 
