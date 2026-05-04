@@ -1,0 +1,232 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="alternate icon" type="image/x-icon" href="/favicon.ico"><meta name="generator" content="Astro v5.16.6"><title>Building a High-Resolution Timer from WebAssembly.Memory</title><meta name="description" content><link rel="canonical" href="https://www.brokenbrowser.com/blog/2024-06-10-wasm-shared-memory-timer/"><meta property="og:title" content="Building a High-Resolution Timer from WebAssembly.Memory"><meta property="og:description" content><meta property="og:type" content="website"><meta property="og:url" content="https://www.brokenbrowser.com/blog/2024-06-10-wasm-shared-memory-timer/"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Building a High-Resolution Timer from WebAssembly.Memory"><meta name="twitter:description" content><link rel="sitemap" href="/sitemap-index.xml"><link rel="alternate" type="application/rss+xml" title="RSS" href="/rss.xml"><!-- Google Analytics --><script async src="https://www.googletagmanager.com/gtag/js?id=G-T47P3SR20T"></script><script type="module">(()=>{const s=document.querySelector(".container"),o=document.querySelectorAll(".menu");document.body.addEventListener("click",()=>{o.forEach(e=>{e.classList.contains("open")&&e.classList.remove("open")})}),window.addEventListener("resize",()=>{o.forEach(e=>{e.classList.remove("open")})}),o.forEach(e=>{const i=e.querySelector(".menu__trigger"),t=e.querySelector(".menu__dropdown");i&&t&&(i.addEventListener("click",n=>{n.stopPropagation(),e.classList.contains("open")?e.classList.remove("open"):(o.forEach(c=>c.classList.remove("open")),e.classList.add("open")),s&&t.getBoundingClientRect().right>s.getBoundingClientRect().right&&(t.style.left="auto",t.style.right="0")}),t.addEventListener("click",n=>n.stopPropagation()))})})();</script><link rel="stylesheet" href="/_astro/_slug_.D8CnJWvD.css"></head> <body> <div class="container center"> <header class="header"> <div class="header__inner"> <div class="header__logo"> <a href="/"> <div class="logo">
+MagicMac Labs
+</div> </a> </div> <ul class="menu menu--mobile"> <li class="menu__trigger">Menu ▾</li> <li> <ul class="menu__dropdown"> <!--<li><a href={`${base}`}>Home</a></li>--> <li><a href="/browser-workshop/">Browser Workshop</a></li> <li><a href="/musings/">Musings</a></li> <li><a href="/about/">About</a></li> </ul> </li> </ul> </div> <nav class="navigation-menu"> <ul class="navigation-menu__inner menu--desktop"> <!--<li><a href={`${base}`}>Home</a></li>--> <li><a href="/browser-workshop/">Browser Workshop</a></li> <li><a href="/musings/">Musings</a></li> <li><a href="/about/">About</a></li> </ul> </nav> </header> <main class="content">  <article> <h1 class="post-title">Building a High-Resolution Timer from WebAssembly.Memory</h1> <div class="post-meta"> <time> <time datetime="2024-06-10T00:00:00.000Z"> 2024-06-10 </time> </time> <span class="post-category"> :: <a href="/browser-workshop/">browser-workshop</a></span> <span class="post-category"> :: <a href="/browser-workshop/misc/">misc</a></span>  </div>  <div class="post-content">  <p>Not a vulnerability — just something I stumbled onto while poking at WebAssembly. One line of JavaScript on a page that has no special headers gives you a working <code>SharedArrayBuffer</code>, and from there you can build a timer roughly 17× finer than <code>performance.now()</code>.</p>
+<h2 id="background">Background</h2>
+<p><code>SharedArrayBuffer</code> was locked behind cross-origin isolation (<code>Cross-Origin-Opener-Policy: same-origin</code> + <code>Cross-Origin-Embedder-Policy: require-corp</code>) in 2020. The reason: an unprivileged page could use one to build a high-resolution timer, and a high-resolution timer is enough for Spectre-class side-channel attacks. On a non-isolated page, <code>SharedArrayBuffer</code> is supposed to be unavailable, and <code>performance.now()</code> precision is reduced — typically floored at 100 µs.</p>
+<p>It turns out you can still get a working <code>SharedArrayBuffer</code> on such a page with one line:</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground); overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="javascript"><code><span class="line"><span style="color:var(--astro-code-token-keyword)">const</span><span style="color:var(--astro-code-token-constant)"> sab</span><span style="color:var(--astro-code-token-keyword)"> =</span><span style="color:var(--astro-code-token-keyword)"> new</span><span style="color:var(--astro-code-token-constant)"> WebAssembly</span><span style="color:var(--astro-code-token-function)">.Memory</span><span style="color:var(--astro-code-foreground)">({ initial</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> 1</span><span style="color:var(--astro-code-token-punctuation)">,</span><span style="color:var(--astro-code-foreground)"> maximum</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> 1</span><span style="color:var(--astro-code-token-punctuation)">,</span><span style="color:var(--astro-code-foreground)"> shared</span><span style="color:var(--astro-code-token-keyword)">:</span><span style="color:var(--astro-code-token-constant)"> true</span><span style="color:var(--astro-code-foreground)"> }).buffer;</span></span></code></pre>
+<p>I originally found this via <code>WebAssembly.instantiate()</code> on a module that declared shared memory, then went looking for prior reports and found a much shorter form already existed. It was reported to Chrome at <a href="https://issues.chromium.org/issues/40057687">issues.chromium.org/issues/40057687</a> and dismissed as Won’t Fix. Because the trick is already public and not considered a security bug by the vendor, this is just a demonstration of what you can actually do with the resulting buffer — a working high-resolution timer in the browser, no Workers required, no special headers required.</p>
+<h2 id="how-the-timer-works">How the timer works</h2>
+<ol>
+<li>Construct a <code>WebAssembly.Memory({ shared: true })</code>; its <code>.buffer</code> is a real <code>SharedArrayBuffer</code>.</li>
+<li>Spawn a hidden, same-origin blob iframe. Because it shares the parent’s agent cluster, you can hand it the SAB by a direct cross-realm function call — no <code>postMessage</code>, no structured clone (the latter is still gated on cross-origin isolation and would refuse).</li>
+<li>Inside the iframe, drive a <code>MessageChannel</code> ping-pong that calls <code>Atomics.add(counter, 0, 1)</code> on every macrotask. <code>MessageChannel</code> is not subject to the 4 ms <code>setTimeout</code> clamp, so this typically reaches 50–200 kHz without freezing the main thread. (A true <code>while (true)</code> busy loop would freeze the page, since same-origin blob iframes share the parent’s event loop.)</li>
+<li>The parent reads the counter with <code>Atomics.load</code>, calibrates against a known sleep, and converts ticks to nanoseconds.</li>
+</ol>
+<h2 id="what-youll-see">What you’ll see</h2>
+<p>Click <em>Run measurement</em> below. Typical numbers on a non-isolated Chromium-family browser: tick rate around <strong>100,000 Hz</strong>, smallest distinguishable step around <strong>6 µs</strong>, while <code>performance.now()</code> on the same page is floored at <strong>100 µs</strong>. So the SAB-based counter ends up roughly 17× finer than the timer the browser intended you to have.</p>
+<p>Caveats: calibration jitter is around ±10%, so the absolute µs values are noisy. The timer’s resolution (smallest distinguishable step) is real, but converting ticks to a wall-clock time unit is only ballpark-accurate.</p>
+<h2 id="why-chrome-considers-this-not-a-bug">Why Chrome considers this not-a-bug</h2>
+<p>Best guess from the issue thread: the team’s view is that the structured-clone gate (<code>Worker.postMessage(sab)</code> still throws on a non-isolated page) is sufficient to keep the buffer from crossing into another agent cluster. In-cluster sharing — what this page does — is considered acceptable since everything in the cluster already shares state in other ways. Whether that’s convincing depends on whether you think “high-resolution timer in the document’s agent cluster” is a useful primitive to deny on its own. Reasonable people disagree.</p>
+<p><a href="https://twitter.com/magicmac2000">Manuel</a></p>
+<hr>
+<style>
+.timer-demo .demo-env {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  font-size: 0.82rem;
+  margin: 0 0 1.25rem;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  overflow-x: auto;
+}
+.timer-demo .demo-env dt,
+.timer-demo .demo-env dd {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  margin: 0;
+  word-break: break-all;
+}
+.timer-demo .demo-env dt {
+  opacity: 0.55;
+  border-right: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  white-space: nowrap;
+}
+.timer-demo .demo-env dt:last-of-type,
+.timer-demo .demo-env dd:last-of-type { border-bottom: none; }
+.timer-demo .demo-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.timer-demo #demo-output {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  font-size: 0.83rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  border-left: 3px solid var(--accent);
+}
+</style>
+<div class="timer-demo">
+  <dl class="demo-env" id="demo-env-grid"></dl>
+  <div class="demo-actions">
+    <button id="demo-runBtn" class="button">Run measurement</button>
+    <button id="demo-measureBtn" class="button" style="opacity:0.5;cursor:not-allowed;" disabled>Measure 10 ms sleep</button>
+  </div>
+  <pre id="demo-output">Click "Run measurement" to calibrate the timer and gather diagnostics.</pre>
+</div>
+<script>
+(function () {
+  // Populate environment table.
+  const grid = document.getElementById('demo-env-grid');
+  let memBufferCtor = '(not yet probed)';
+  let probeError = null;
+  try {
+    const mem = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+    memBufferCtor = mem.buffer.constructor.name;
+  } catch (e) {
+    probeError = e.message || String(e);
+  }
+  const rows = [
+    ['self.crossOriginIsolated', String(self.crossOriginIsolated)],
+    ['typeof SharedArrayBuffer (global)', typeof SharedArrayBuffer],
+    ['new WebAssembly.Memory({shared:true}).buffer.constructor', probeError ? `threw: ${probeError}` : memBufferCtor],
+    ['performance.now() sample', performance.now().toString()],
+  ];
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    grid.append(dt, dd);
+  }
+
+  // Obtain a SharedArrayBuffer via WebAssembly.Memory.
+  // On a non-cross-origin-isolated page the global SharedArrayBuffer is
+  // unavailable, but WebAssembly.Memory({shared:true}) is still constructible
+  // and its .buffer is a real SharedArrayBuffer.
+  function getSharedBuffer() {
+    const mem = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+    return mem.buffer;
+  }
+
+  async function runMeasurement() {
+    const output = document.getElementById('demo-output');
+    const runBtn = document.getElementById('demo-runBtn');
+    const measureBtn = document.getElementById('demo-measureBtn');
+    runBtn.disabled = true;
+    runBtn.textContent = 'Running…';
+    output.textContent = 'Starting ticker iframe (this takes a few seconds)…\n';
+    await new Promise(r => setTimeout(r, 0));
+
+    let sab;
+    try {
+      sab = getSharedBuffer();
+    } catch (e) {
+      output.textContent += `\nThis browser refused to construct a shared WebAssembly.Memory:\n  ${e.message || e}\nNothing to demonstrate.\n`;
+      runBtn.disabled = false; runBtn.textContent = 'Run measurement';
+      return;
+    }
+    if (sab.constructor.name !== 'SharedArrayBuffer') {
+      output.textContent += `\nWebAssembly.Memory.buffer is a ${sab.constructor.name}, not a SharedArrayBuffer.\nNothing to demonstrate.\n`;
+      runBtn.disabled = false; runBtn.textContent = 'Run measurement';
+      return;
+    }
+
+    const counter = new Uint32Array(sab, 0, 1);
+
+    // Create a same-origin blob iframe. It shares the parent's agent cluster,
+    // so we can pass the SAB by direct cross-realm call (no postMessage).
+    const iframeHtml = `<!DOCTYPE html><html><body><script>
+      window.startTicking = (sab) => {
+        const counter = new Uint32Array(sab);
+        // MessageChannel.postMessage schedules a macrotask without the 4ms
+        // setTimeout clamp, so the loop reaches tens-to-hundreds of kHz
+        // without freezing the main thread.
+        const { port1, port2 } = new MessageChannel();
+        port1.onmessage = () => { Atomics.add(counter, 0, 1); port2.postMessage(0); };
+        port2.postMessage(0);
+      };
+    <\/script></body></html>`;
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = URL.createObjectURL(new Blob([iframeHtml], { type: 'text/html' }));
+    document.body.appendChild(iframe);
+    await new Promise(r => iframe.addEventListener('load', r, { once: true }));
+    iframe.contentWindow.startTicking(sab);
+    await new Promise(r => setTimeout(r, 10));
+
+    const getTicks = () => Atomics.load(counter, 0);
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const measure = async op => { const s = getTicks(); await op(); return getTicks() - s; };
+    const status = async msg => { output.textContent += msg + '\n'; await new Promise(r => setTimeout(r, 0)); };
+
+    const KNOWN_MS = 10;
+    output.textContent = '';
+    await status('[1/4] Calibrating tick duration (10 ms sleep)…');
+    const sampleTicks = await measure(() => sleep(KNOWN_MS));
+    const tickNs = (KNOWN_MS * 1_000_000) / sampleTicks;
+    await status(`      → ${sampleTicks} ticks in ${KNOWN_MS} ms (~${tickNs.toFixed(2)} ns/tick)`);
+
+    await status('[2/4] Measuring tick rate over 1 second…');
+    const freqStart = getTicks();
+    await sleep(1000);
+    const ticksPerSec = getTicks() - freqStart;
+    const effectiveResUs = 1_000_000 / ticksPerSec;
+    await status(`      → ${ticksPerSec} Hz`);
+
+    await status('[3/4] Sampling 2000 reads for resolution floor…');
+    let minDelta = Infinity;
+    const yieldToLoop = () => new Promise(r => setTimeout(r, 0));
+    let prev = getTicks();
+    const SAMPLES = 2000;
+    for (let i = 0; i < SAMPLES; i++) {
+      await yieldToLoop();
+      const now = getTicks();
+      const d = now - prev;
+      if (d > 0 && d < minDelta) minDelta = d;
+      prev = now;
+    }
+    const minDeltaNs = minDelta === Infinity ? null : minDelta * tickNs;
+
+    let perfMin = Infinity;
+    let pPrev = performance.now();
+    for (let i = 0; i < SAMPLES; i++) {
+      const now = performance.now();
+      const d = now - pPrev;
+      if (d > 0 && d < perfMin) perfMin = d;
+      pPrev = now;
+    }
+
+    await status('[4/4] Re-running calibration 5× to check stability…');
+    const calibs = [];
+    for (let i = 0; i < 5; i++) calibs.push(await measure(() => sleep(KNOWN_MS)));
+    const calibMean = calibs.reduce((a, b) => a + b, 0) / calibs.length;
+    const calibStd = Math.sqrt(calibs.reduce((a, b) => a + (b - calibMean) ** 2, 0) / calibs.length);
+
+    output.textContent +=
+      `\nDiagnostics:\n` +
+      `  Tick rate: ${ticksPerSec} Hz (effective resolution ~${effectiveResUs.toFixed(1)} µs)\n` +
+      `  Smallest non-zero tick delta: ${minDelta} ticks` +
+      (minDeltaNs ? ` (~${minDeltaNs.toFixed(1)} ns)\n` : `\n`) +
+      `  performance.now() floor: ${perfMin.toFixed(4)} ms\n` +
+      `  Calibration repeats (10ms): [${calibs.join(', ')}] mean=${calibMean.toFixed(1)} std=${calibStd.toFixed(1)}\n`;
+
+    measureBtn.disabled = false;
+    measureBtn.style.opacity = '';
+    measureBtn.style.cursor = '';
+    measureBtn.onclick = async () => {
+      measureBtn.disabled = true;
+      const startTicks = getTicks();
+      await sleep(10);
+      const deltaTicks = getTicks() - startTicks;
+      output.textContent += `Measured: ${deltaTicks} ticks = ${((deltaTicks * tickNs) / 1000).toFixed(2)} µs (10 ms sleep)\n`;
+      measureBtn.disabled = false;
+    };
+
+    runBtn.disabled = false;
+    runBtn.textContent = 'Run measurement again';
+  }
+
+  document.getElementById('demo-runBtn').addEventListener('click', () => {
+    runMeasurement().catch(err => {
+      document.getElementById('demo-output').textContent += `\nError: ${err && err.message ? err.message : err}\n`;
+      document.getElementById('demo-runBtn').disabled = false;
+    });
+  });
+})();
+</script> <div class="pagination"> <div class="pagination__title"> <span class="pagination__title-h">Read other posts</span> <hr> </div> <div class="pagination__buttons">  <a href="/blog/2017-09-26-revealing-the-content-of-the-address-bar-ie/" class="button inline prev">
+&lt; [Revealing the content of the address bar (IE)]
+</a> <span>::</span> <a href="/blog/2024-11-12-detecting-chrome-extensions-without-console-noise/" class="button inline next">
+[Detecting Chrome Extensions Without Console Noise] &gt;
+</a> </div> </div>  </div> </article> <script type="module">document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll("pre.astro-code").forEach(t=>{const n=document.createElement("div");n.className="highlight",t.parentNode?.insertBefore(n,t),n.appendChild(t);const a=t.getAttribute("data-language")||"text",o=document.createElement("div");if(o.className="code-title",o.textContent=a,navigator.clipboard){const e=document.createElement("button");e.className="copy-button",e.textContent="Copy",e.addEventListener("click",async()=>{const c=t.textContent||"";try{await navigator.clipboard.writeText(c),e.textContent="Copied",setTimeout(()=>{e.textContent="Copy"},1e3)}catch(r){console.error("Failed to copy:",r)}}),o.appendChild(e)}n.insertBefore(o,t)})});</script>  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>  </main> <footer class="footer"> <div class="footer__inner"> <div class="copyright"> <span>© 2026 MagicMac Labs</span> </div> </div> </footer> </div> <script type="module">window.dataLayer=window.dataLayer||[];function a(){dataLayer.push(arguments)}a("js",new Date);a("config","G-T47P3SR20T");</script> </body> </html> 
